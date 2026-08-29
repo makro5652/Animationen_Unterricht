@@ -1,115 +1,267 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Unterrichts-Animationen Chemie</title>
-<style>
-  :root {
-    --ink: #06090F;
-    --panel: #0D131E;
-    --panel2: #111A28;
-    --line: #1E2A3C;
-    --txt: #DAE3EF;
-    --dim: #7C8CA4;
-    --cloud: #7B6BFF;
-    --neg: #31D8C0;
-    --pos: #FF9E42;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    background: radial-gradient(1200px 700px at 20% -10%, #101A2B 0%, transparent 60%), var(--ink);
-    color: var(--txt);
-    font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 20px 60px; }
-  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 30px; }
-  .eyebrow {
-    font-family: var(--mono); font-size: 11px; letter-spacing: .2em;
-    text-transform: uppercase; color: var(--dim); margin: 0 0 8px;
-  }
-  h1 { font-size: clamp(24px, 4vw, 36px); margin: 0 0 10px; font-weight: 700; letter-spacing: -.02em; }
-  h1 span { color: var(--cloud); }
-  .sub { color: var(--dim); margin: 0; max-width: 60ch; font-size: 15px; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animationen für den Unterricht</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #34495e;
+            --accent-biology: #27ae60;
+            --accent-chemistry: #2980b9;
+            --bg-color: #f4f6f9;
+            --card-bg: #ffffff;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-  .card {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 22px;
-    display: flex;
-    flex-direction: column;
-    text-decoration: none;
-    color: inherit;
-    transition: transform .15s ease, border-color .15s ease, background-color .15s ease;
-  }
-  .card:hover {
-    transform: translateY(-2px);
-    border-color: #33445E;
-    background: var(--panel2);
-  }
-  .tag {
-    align-self: flex-start;
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    color: var(--neg);
-    background: rgba(49, 216, 192, 0.1);
-    border: 1px solid rgba(49, 216, 192, 0.2);
-    padding: 4px 8px;
-    border-radius: 6px;
-    margin-bottom: 14px;
-  }
-  .tag.atom {
-    color: var(--pos);
-    background: rgba(255, 158, 66, 0.1);
-    border-color: rgba(255, 158, 66, 0.2);
-  }
-  .card h2 { margin: 0 0 8px; font-size: 18px; color: var(--txt); }
-  .card p { margin: 0; color: var(--dim); font-size: 13.5px; line-height: 1.45; }
-  .card .arrow {
-    margin-top: auto;
-    padding-top: 18px;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--cloud);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-</style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--primary-color);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        p.subtitle {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+        }
+
+        .subject-section {
+            margin-bottom: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            overflow: hidden;
+            background: var(--card-bg);
+        }
+
+        .subject-title {
+            font-size: 1.8rem;
+            padding: 15px 25px;
+            color: white;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .biology .subject-title { background-color: var(--accent-biology); }
+        .chemistry .subject-title { background-color: var(--accent-chemistry); }
+
+        .card-container {
+            padding: 25px;
+        }
+
+        .topic-group {
+            margin-bottom: 30px;
+        }
+        
+        .topic-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .topic-title {
+            font-size: 1.3rem;
+            color: var(--secondary-color);
+            border-bottom: 2px solid #ecf0f1;
+            margin-top: 0;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+        }
+
+        a {
+            text-decoration: none;
+            color: #2c3e50;
+            display: block;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            transition: all 0.2s ease-in-out;
+            border-left: 5px solid transparent;
+        }
+
+        .biology a:hover {
+            background-color: #e8f5e9;
+            border-color: #c8e6c9;
+            border-left-color: var(--accent-biology);
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(39, 174, 96, 0.15);
+        }
+
+        .chemistry a:hover {
+            background-color: #e3f2fd;
+            border-color: #bbdefb;
+            border-left-color: var(--accent-chemistry);
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(41, 128, 185, 0.15);
+        }
+
+        .link-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .file-name {
+            font-size: 0.85em;
+            color: #95a5a6;
+            display: block;
+            font-family: monospace;
+        }
+
+        @media (max-width: 600px) {
+            ul {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <p class="eyebrow">Sammlung &amp; Materialien</p>
-    <h1>Interaktive <span>Animationen</span></h1>
-    <p class="sub">Übersicht interaktiver Modelle und Simulationen für den Chemieunterricht.</p>
-  </header>
 
-  <div class="grid">
-    <a href="van-der-waals-modell.html" class="card">
-      <span class="tag">Alkane · Bindungskräfte</span>
-      <h2>Van-der-Waals-Wechselwirkungen</h2>
-      <p>Interaktives Modell zu temporären und induzierten Dipolen, Kettenlängen, Verzweigungen und Siedetemperaturen.</p>
-      <span class="arrow">Modell öffnen &rarr;</span>
-    </a>
+    <div class="container">
+        <header>
+            <h1>Unterrichts-Animationen</h1>
+            <p class="subtitle">Interaktive Modelle sortiert nach Fach und Themengebiet</p>
+        </header>
 
-    <a href="schalenmodell.html" class="card">
-      <span class="tag atom">Atomaufbau · PSE</span>
-      <h2>Bohrsches Schalenmodell</h2>
-      <p>Interaktive Darstellung von Atomen, Elektronenkonfigurationen auf den Hauptenergieniveaus und Schalen.</p>
-      <span class="arrow">Modell öffnen &rarr;</span>
-    </a>
-  </div>
-</div>
+        <!-- BIOLOGIE -->
+        <section class="subject-section biology">
+            <h2 class="subject-title">🧬 Biologie</h2>
+            <div class="card-container">
+                
+                <div class="topic-group">
+                    <h3 class="topic-title">Regulation & Stoffwechsel</h3>
+                    <ul>
+                        <li>
+                            <a href="Animation_Blutzuckerregulation.html">
+                                <span class="link-title">Blutzuckerregulation</span>
+                                <span class="file-name">Animation_Blutzuckerregulation.html</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="Animatin_negative_Rückkopplung.html">
+                                <span class="link-title">Negative Rückkopplung (Standard)</span>
+                                <span class="file-name">Animatin_negative_Rückkopplung.html</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="Animatin_negative_Rückkopplung_ausführlich.html">
+                                <span class="link-title">Negative Rückkopplung (Ausführlich)</span>
+                                <span class="file-name">Animatin_negative_Rückkopplung_ausführlic...html</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- CHEMIE -->
+        <section class="subject-section chemistry">
+            <h2 class="subject-title">🧪 Chemie</h2>
+            <div class="card-container">
+
+                <div class="topic-group">
+                    <h3 class="topic-title">Analytik & Nachweisreaktionen</h3>
+                    <ul>
+                        <li>
+                            <a href="Animation_Fehling_Probe.html">
+                                <span class="link-title">Fehling-Probe</span>
+                                <span class="file-name">Animation_Fehling_Probe.html</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="Animation_Fehling_Probe_v2.html">
+                                <span class="link-title">Fehling-Probe (Version 2)</span>
+                                <span class="file-name">Animation_Fehling_Probe_v2.html</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="Animation_Silberspiegel_Tollens_Probe.html">
+                                <span class="link-title">Tollens-Probe (Silberspiegel)</span>
+                                <span class="file-name">Animation_Silberspiegel_Tollens_Probe.html</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="topic-group">
+                    <h3 class="topic-title">Säuren & Basen</h3>
+                    <ul>
+                        <li>
+                            <a href="Animation_Protolyse_HCL_in_Wasser.html">
+                                <span class="link-title">Protolyse von HCl in Wasser</span>
+                                <span class="file-name">Animation_Protolyse_HCL_in_Wasser.html</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="topic-group">
+                    <h3 class="topic-title">Reaktionskinetik</h3>
+                    <ul>
+                        <li>
+                            <a href="Stoßtheorie_Animation.html">
+                                <span class="link-title">Stoßtheorie</span>
+                                <span class="file-name">Stoßtheorie_Animation.html</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="topic-group">
+                    <h3 class="topic-title">Atommodelle & Bindungen</h3>
+                    <ul>
+                        <li>
+                            <a href="schalenmodell.html">
+                                <span class="link-title">Schalenmodell</span>
+                                <span class="file-name">schalenmodell.html</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="van-der-waals-modell.html">
+                                <span class="link-title">Van-der-Waals-Modell</span>
+                                <span class="file-name">van-der-waals-modell.html</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+    </div>
+
 </body>
 </html>
