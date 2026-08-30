@@ -97,6 +97,19 @@ label.check{display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:3
 label.check input{margin:2px 0 0;accent-color:var(--accent);flex:none}
 label.check.off{opacity:.45;cursor:default}
 
+details{border:1px solid var(--ink-3);border-radius:var(--radius);padding:7px 9px;background:var(--ink-2)}
+details summary{cursor:pointer;font-size:12.5px;color:var(--text-dim);list-style:none}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"▸ ";}
+details[open] summary::before{content:"▾ ";}
+details .stack{margin-top:8px}
+textarea{
+  width:100%;min-height:70px;resize:vertical;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.45;
+  color:var(--text-on-ink);background:var(--ink);border:1px solid var(--ink-3);
+  border-radius:var(--radius);padding:6px 7px;
+}
+
 /* ---- Darstellungs-Reiter ---- */
 .modes{display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap}
 .modes button{
@@ -237,13 +250,46 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
     </div>
 
     <div class="group">
-      <h2>Blatt</h2>
+      <h2>Auswahl drehen</h2>
+      <div class="row" id="transform">
+        <button data-rot="-15" style="flex:1;text-align:center" title="15° gegen den Uhrzeigersinn">↺ 15°</button>
+        <button data-rot="15" style="flex:1;text-align:center" title="15° im Uhrzeigersinn">↻ 15°</button>
+        <button id="btnMirror" style="flex:1;text-align:center" title="waagerecht spiegeln">⇋</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Bearbeiten</h2>
       <div class="stack">
-        <button class="ghost" id="btnUndo">Rückgängig</button>
+        <div class="row">
+          <button class="ghost" id="btnUndo" style="flex:1;text-align:center">Rückgängig</button>
+          <button class="ghost" id="btnRedo" style="flex:1;text-align:center">Wiederholen</button>
+        </div>
         <button class="ghost" id="btnCenter">Ansicht zentrieren</button>
         <button class="ghost" id="btnClear">Alles löschen</button>
-        <button class="ghost" id="btnPng">Als PNG speichern</button>
       </div>
+    </div>
+
+    <div class="group">
+      <h2>Export</h2>
+      <div class="stack">
+        <button class="ghost" id="btnPng">Als PNG speichern</button>
+        <button class="ghost" id="btnSvg">Als SVG speichern (Vektor)</button>
+        <button class="ghost" id="btnCopyImg">Bild in Zwischenablage</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <details>
+        <summary>Molekül-Code (speichern &amp; laden)</summary>
+        <div class="stack">
+          <textarea id="code" spellcheck="false" placeholder="Code erzeugen oder hier einfügen …"></textarea>
+          <div class="row">
+            <button class="ghost" id="btnCodeGet" style="flex:1;text-align:center">Erzeugen</button>
+            <button class="ghost" id="btnCodeSet" style="flex:1;text-align:center">Laden</button>
+          </div>
+        </div>
+      </details>
     </div>
   </aside>
 
@@ -395,16 +441,30 @@ const state = {
 };
 const effShowC = () => state.showC || state.hMode === 'allText' || state.hMode === 'allLine';
 const undoStack = [];
+const redoStack = [];
+const snapshot = () => JSON.stringify({atoms, bonds, nid});
+function apply(s){
+  const d = JSON.parse(s);
+  atoms = d.atoms; bonds = d.bonds; nid = d.nid;
+  selection.clear();
+}
 function pushUndo(){
-  undoStack.push(JSON.stringify({atoms, bonds, nid}));
+  undoStack.push(snapshot());
   if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
 }
 function undo(){
   const s = undoStack.pop();
   if (!s) return;
-  const d = JSON.parse(s);
-  atoms = d.atoms; bonds = d.bonds; nid = d.nid;
-  selection.clear();
+  redoStack.push(snapshot());
+  apply(s);
+  refresh();
+}
+function redo(){
+  const s = redoStack.pop();
+  if (!s) return;
+  undoStack.push(snapshot());
+  apply(s);
   refresh();
 }
 
@@ -568,6 +628,13 @@ function boxCut(dx, dy, hw, hh){
 }
 
 function drawScene(c, opt){
+  const B = opt && opt.bounds;
+  const ext = (x, y, rx, ry) => {
+    if (!B) return;
+    rx = rx || 0; ry = ry === undefined ? rx : ry;
+    B.x0 = Math.min(B.x0, x-rx); B.x1 = Math.max(B.x1, x+rx);
+    B.y0 = Math.min(B.y0, y-ry); B.y1 = Math.max(B.y1, y+ry);
+  };
   const halos = new Map();   // id -> {w,h} halbe Ausdehnung der Beschriftung
   const runsMap = new Map();
 
@@ -577,7 +644,8 @@ function drawScene(c, opt){
     if (runs){
       const m = measureRuns(c, runs);
       halos.set(a.id, {hw: m.w / 2 + 3.5, hh: m.h / 2 + 2.5});
-    }
+      ext(a.x, a.y, m.w/2 + 1, m.h/2 + 1);
+    } else ext(a.x, a.y, 1);
   }
   // Zusätzlich gezeichnete H-Atome vorbereiten
   const hAtoms = [];
@@ -589,6 +657,7 @@ function drawScene(c, opt){
       const dirs = freeDirs(a, n, [], L * 0.74);
       for (const d of dirs){
         hAtoms.push({parent:a, x:a.x + L*0.74*Math.cos(d), y:a.y + L*0.74*Math.sin(d)});
+        ext(a.x + L*0.74*Math.cos(d), a.y + L*0.74*Math.sin(d), 8, 9);
       }
     }
   }
@@ -679,6 +748,7 @@ function drawScene(c, opt){
       for (const d of dirs){
         const px = a.x + r*Math.cos(d), py = a.y + r*Math.sin(d);
         const nx = -Math.sin(d), ny = Math.cos(d);
+        ext(px, py, 7);
         if (state.lp === 'line'){                     // Valenzstrich quer zur Richtung
           const h = 5.6;
           c.beginPath();
@@ -1079,7 +1149,7 @@ function snapAngle(a){
   return Math.round(a / step) * step;
 }
 
-let downPt = null, moved = false;
+let downPt = null, moved = false, lastTap = {id:null, t:0};
 
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId);
@@ -1155,7 +1225,20 @@ cv.addEventListener('pointerup', e => {
   }
   if (wasDrag && wasDrag.sel){ refresh(); downPt = null; return; }
 
-  if (wasDrag && wasDrag.moveId != null){ refresh(); downPt = null; return; }
+  if (wasDrag && wasDrag.moveId != null){
+    if (!moved){                       // Doppeltipp markiert das ganze Teilchen
+      const now = Date.now();
+      if (lastTap.id === wasDrag.moveId && now - lastTap.t < 450){
+        selection = componentOf(wasDrag.moveId);
+        lastTap = {id:null, t:0};
+        refresh();
+        $('#hint').textContent = selection.size + ' Atome markiert (ganzes Teilchen).';
+        downPt = null; return;
+      }
+      lastTap = {id: wasDrag.moveId, t: now};
+    }
+    refresh(); downPt = null; return;
+  }
 
   if (wasDrag && wasDrag.from != null && moved){
     pushUndo();
@@ -1218,15 +1301,19 @@ document.querySelectorAll('#tools button').forEach(btn => {
 });
 
 // Elementknöpfe
+const EL_NAMES = {H:'Wasserstoff', C:'Kohlenstoff', N:'Stickstoff', O:'Sauerstoff', S:'Schwefel',
+                  P:'Phosphor', F:'Fluor', Cl:'Chlor', Br:'Brom', I:'Iod'};
 const elBox = $('#elements');
 EL_ORDER.forEach(el => {
   const b = document.createElement('button');
   b.className = 'el' + (el === 'C' ? ' on' : '');
   b.textContent = el; b.dataset.el = el;
+  b.title = EL_NAMES[el] + ' – Bindigkeit ' + EL[el].v;
   b.style.color = 'var(' + ({H:'--el-H',C:'--el-C',N:'--el-N',O:'--el-O',S:'--el-S',P:'--el-P'}[el] || '--el-Hal') + ')';
   if (el === 'C') b.style.color = '';
   b.addEventListener('click', () => {
     state.el = el;
+    $('#hint').textContent = EL_NAMES[el] + ' (' + el + '), Bindigkeit ' + EL[el].v + '. ' + HINTS[state.tool];
     document.querySelectorAll('#elements button').forEach(x => {
       x.classList.toggle('on', x === b);
       x.style.color = x.classList.contains('on') ? '' :
@@ -1286,6 +1373,7 @@ $('#whiteBg').addEventListener('change', e => {
 
 // Blattfunktionen
 $('#btnUndo').addEventListener('click', undo);
+$('#btnRedo').addEventListener('click', redo);
 $('#btnClear').addEventListener('click', () => { pushUndo(); atoms = []; bonds = []; selection.clear(); refresh(); });
 $('#btnCenter').addEventListener('click', () => { centerView(); refresh(); });
 
@@ -1305,6 +1393,36 @@ function centerView(){
    Die längste Kette wird waagerecht ausgerichtet, Seitenketten zweigen im
    eingestellten Winkel (90° oder 45°) ab und laufen dann geradlinig weiter. */
 const allNeighbors = id => neighbors(id).map(n => n.id);
+
+function componentOf(start){
+  const seen = new Set([start]), q = [start];
+  while (q.length){
+    const cur = q.shift();
+    for (const n of allNeighbors(cur)) if (!seen.has(n)){ seen.add(n); q.push(n); }
+  }
+  return seen;
+}
+/* Dreht bzw. spiegelt die Auswahl – ohne Auswahl die ganze Zeichnung */
+function transformSel(fn){
+  const list = (selection.size ? [...selection] : atoms.map(a => a.id)).map(byId).filter(Boolean);
+  if (!list.length) return;
+  pushUndo();
+  let cx = 0, cy = 0;
+  list.forEach(a => { cx += a.x; cy += a.y; });
+  cx /= list.length; cy /= list.length;
+  list.forEach(a => {
+    const [x, y] = fn(a.x - cx, a.y - cy);
+    a.x = cx + x; a.y = cy + y;
+  });
+  refresh();
+}
+document.querySelectorAll('#transform [data-rot]').forEach(b => {
+  b.addEventListener('click', () => {
+    const r = +b.dataset.rot * Math.PI/180, co = Math.cos(r), si = Math.sin(r);
+    transformSel((x, y) => [x*co - y*si, x*si + y*co]);
+  });
+});
+$('#btnMirror').addEventListener('click', () => transformSel((x, y) => [-x, y]));
 
 function componentsAll(){
   const seen = new Set(), comps = [];
@@ -1450,10 +1568,27 @@ document.querySelectorAll('#alignMode button').forEach(b => {
   });
 });
 
-// PNG-Export
-$('#btnPng').addEventListener('click', () => {
-  if (!atoms.length) return;
-  const bb = bbox(), m = 60, scale = 2;
+/* --- Export ---------------------------------------------------------- */
+function download(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function flash(btn, text){
+  const old = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => btn.textContent = old, 1800);
+}
+function sceneBounds(){
+  const b = {x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9};
+  drawScene(new SvgCtx(), {bounds: b});
+  if (b.x0 > b.x1){ const bb = bbox(); return bb ? {x0:bb.x0, y0:bb.y0, x1:bb.x1, y1:bb.y1} : null; }
+  return b;
+}
+function renderToCanvas(scale){
+  const bb = sceneBounds(), m = 22;
   const w = (bb.x1-bb.x0) + 2*m, h = (bb.y1-bb.y0) + 2*m;
   const off = document.createElement('canvas');
   off.width = Math.round(w*scale); off.height = Math.round(h*scale);
@@ -1462,13 +1597,126 @@ $('#btnPng').addEventListener('click', () => {
   c.fillStyle = '#FFFFFF'; c.fillRect(0,0,w,h);
   c.translate(m - bb.x0, m - bb.y0);
   drawScene(c, {});
-  off.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'strukturformel.png';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return off;
+}
+$('#btnPng').addEventListener('click', () => {
+  if (!atoms.length) return;
+  renderToCanvas(3).toBlob(b => download(b, 'strukturformel.png'));
+});
+$('#btnCopyImg').addEventListener('click', () => {
+  const btn = $('#btnCopyImg');
+  if (!atoms.length) return;
+  renderToCanvas(3).toBlob(async blob => {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      flash(btn, 'Bild kopiert');
+    } catch {
+      flash(btn, 'Nicht möglich – bitte PNG speichern');
+    }
   });
+});
+
+/* Minimaler Zeichenkontext, der statt auf die Leinwand nach SVG schreibt.
+   So erzeugt dieselbe Zeichenroutine eine verlustfrei skalierbare Datei. */
+function SvgCtx(){
+  this.parts = []; this.tx = 0; this.ty = 0;
+  this.fillStyle = '#000'; this.strokeStyle = '#000'; this.lineWidth = 1;
+  this.lineCap = 'butt'; this.lineJoin = 'miter';
+  this.font = '16px sans-serif'; this.textAlign = 'left'; this.textBaseline = 'alphabetic';
+  this._d = ''; this._circles = [];
+  this._m = document.createElement('canvas').getContext('2d');
+}
+SvgCtx.prototype = {
+  _x(v){ return +(v + this.tx).toFixed(2); },
+  _y(v){ return +(v + this.ty).toFixed(2); },
+  setTransform(){}, save(){}, restore(){}, setLineDash(){}, closePath(){ this._d += 'Z '; },
+  translate(x, y){ this.tx += x; this.ty += y; },
+  beginPath(){ this._d = ''; this._circles = []; },
+  moveTo(x, y){ this._d += 'M' + this._x(x) + ' ' + this._y(y) + ' '; },
+  lineTo(x, y){ this._d += 'L' + this._x(x) + ' ' + this._y(y) + ' '; },
+  arc(x, y, r){ this._circles.push({x:this._x(x), y:this._y(y), r}); },
+  fillRect(x, y, w, h){
+    this.parts.push('<rect x="'+this._x(x)+'" y="'+this._y(y)+'" width="'+w+'" height="'+h+
+                    '" fill="'+this.fillStyle+'"/>');
+  },
+  stroke(){
+    if (!this._d) return;
+    this.parts.push('<path d="'+this._d.trim()+'" fill="none" stroke="'+this.strokeStyle+
+      '" stroke-width="'+this.lineWidth+'" stroke-linecap="'+this.lineCap+
+      '" stroke-linejoin="'+this.lineJoin+'"/>');
+  },
+  fill(){
+    for (const c of this._circles)
+      this.parts.push('<circle cx="'+c.x+'" cy="'+c.y+'" r="'+c.r+'" fill="'+this.fillStyle+'"/>');
+    this._circles = [];
+    if (this._d) this.parts.push('<path d="'+this._d.trim()+'" fill="'+this.fillStyle+'"/>');
+  },
+  measureText(t){ this._m.font = this.font; return this._m.measureText(t); },
+  fillText(t, x, y){
+    const size = parseFloat((this.font.match(/([\d.]+)px/) || [0, 16])[1]);
+    const esc = String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // textBaseline 'middle' wird bewusst ausgerechnet, damit auch Word korrekt setzt
+    const yy = this.textBaseline === 'middle' ? this._y(y) + size*0.35 : this._y(y);
+    this.parts.push('<text x="'+this._x(x)+'" y="'+yy.toFixed(2)+
+      '" font-family="IBM Plex Sans, Segoe UI, Helvetica, sans-serif" font-size="'+size+
+      '" fill="'+this.fillStyle+'">'+esc+'</text>');
+  }
+};
+$('#btnSvg').addEventListener('click', () => {
+  if (!atoms.length) return;
+  const bb = sceneBounds(), m = 22;
+  const w = Math.round((bb.x1-bb.x0) + 2*m), h = Math.round((bb.y1-bb.y0) + 2*m);
+  const s = new SvgCtx();
+  s.translate(m - bb.x0, m - bb.y0);
+  drawScene(s, {});
+  const svg = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">' +
+    '<rect width="100%" height="100%" fill="#ffffff"/>' + s.parts.join('') + '</svg>';
+  download(new Blob([svg], {type:'image/svg+xml'}), 'strukturformel.svg');
+});
+
+/* --- Molekül-Code ---------------------------------------------------- */
+function encodeMol(){
+  if (!atoms.length) return '';
+  const bb = bbox();
+  const idx = new Map(atoms.map((a, i) => [a.id, i]));
+  const A = atoms.map(a => a.el + Math.round(a.x-bb.x0) + ',' + Math.round(a.y-bb.y0)).join(';');
+  const B = bonds.map(b => idx.get(b.a) + '-' + idx.get(b.b) + ':' + b.order).join(';');
+  return 'MOL1|' + A + '|' + B;
+}
+function decodeMol(txt){
+  const p = txt.trim().split('|');
+  if (p.length !== 3 || p[0] !== 'MOL1') throw new Error('Format');
+  const na = [], nb = [];
+  let id = 1;
+  for (const t of p[1].split(';').filter(Boolean)){
+    const m = t.match(/^([A-Z][a-z]?)(-?\d+),(-?\d+)$/);
+    if (!m || !EL[m[1]]) throw new Error('Atom: ' + t);
+    na.push({id:id++, el:m[1], x:+m[2], y:+m[3]});
+  }
+  for (const t of p[2].split(';').filter(Boolean)){
+    const m = t.match(/^(\d+)-(\d+):([123])$/);
+    if (!m || !na[+m[1]] || !na[+m[2]]) throw new Error('Bindung: ' + t);
+    nb.push({id:id++, a:na[+m[1]].id, b:na[+m[2]].id, order:+m[3]});
+  }
+  return {na, nb, nid:id};
+}
+$('#btnCodeGet').addEventListener('click', () => {
+  $('#code').value = encodeMol();
+  $('#code').select();
+});
+$('#btnCodeSet').addEventListener('click', () => {
+  const btn = $('#btnCodeSet');
+  try {
+    const d = decodeMol($('#code').value);
+    pushUndo();
+    atoms = d.na; bonds = d.nb; nid = d.nid;
+    selection.clear();
+    centerView(); refresh();
+    flash(btn, 'Geladen');
+  } catch (err){
+    flash(btn, 'Code ungültig');
+  }
 });
 
 // Formel kopieren
@@ -1490,14 +1738,19 @@ $('#btnCopy').addEventListener('click', async () => {
 
 // Tastatur
 window.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
   if (e.key === 'Escape' && selection.size){
     selection.clear(); render();
     $('#hint').textContent = HINTS[state.tool];
     return;
   }
   const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && k === 'z'){ e.preventDefault(); undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'z'){
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && k === 'y'){ e.preventDefault(); redo(); return; }
   const toolKeys = {b:'build', e:'element', v:'bond', m:'move', x:'erase'};
   if (toolKeys[k]){ document.querySelector(`#tools [data-tool="${toolKeys[k]}"]`).click(); return; }
   const elKeys = {c:'C', o:'O', n:'N', h:'H', s:'S', f:'F'};
