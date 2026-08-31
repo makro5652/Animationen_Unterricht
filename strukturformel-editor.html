@@ -28,6 +28,7 @@
   --el-S:#A67C00;
   --el-P:#CC5500;
   --el-Hal:#2C7A5B;
+  --el-R:#7B4FA8;
   --radius:6px;
 }
 html.paper-white{
@@ -149,6 +150,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
   word-break:break-word;max-width:100%;
 }
 .formula sub{font-size:.62em;vertical-align:-0.22em;font-weight:600}
+.formula sup{font-size:.62em;vertical-align:0.42em;font-weight:600}
 .formula .frag{display:block;margin:6px 0}
 .textout .note{font-size:12.5px;color:#5C7386;max-width:44ch;line-height:1.5}
 .textout button{background:#fff;color:var(--ink);border-color:#C6D2C6}
@@ -199,6 +201,11 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
     <div class="group">
       <h2>Element</h2>
       <div class="row" id="elements"></div>
+    </div>
+
+    <div class="group">
+      <h2>Reste</h2>
+      <div class="row" id="rests"></div>
     </div>
 
     <div class="group">
@@ -381,6 +388,11 @@ const EL = {
   I : {v:1, ve:7, m:126.904, col:'var(--el-Hal)'}
 };
 const EL_ORDER = ['C','H','O','N','S','P','F','Cl','Br','I'];
+/* Reste: Platzhalter für beliebige Gruppen. Einbindig, ohne Masse und ohne
+   freie Elektronenpaare; der Index dient nur der Unterscheidung. */
+const R_ORDER = ['R','R1','R2','R3','R4'];
+R_ORDER.forEach(r => { EL[r] = {v:1, ve:0, m:0, col:'var(--el-R)'}; });
+const isR = el => typeof el === 'string' && el.charAt(0) === 'R';
 
 /* =======================================================================
    2. Datenmodell
@@ -412,7 +424,7 @@ function removeAtom(id){
 
 /* Zahl der nicht gezeichneten (impliziten) H-Atome */
 function implicitH(a){
-  if (a.el === 'H') return 0;
+  if (a.el === 'H' || isR(a.el)) return 0;
   return Math.max(0, EL[a.el].v - bondSum(a.id));
 }
 /* gezeichnete H-Nachbarn */
@@ -421,6 +433,7 @@ function explicitH(a){ return neighbors(a.id).filter(n => n.el === 'H').length; 
 function totalH(a){ return implicitH(a) + explicitH(a); }
 /* freie Elektronenpaare */
 function lonePairs(a){
+  if (isR(a.el)) return 0;
   const used = bondSum(a.id) + implicitH(a);
   return Math.max(0, Math.floor((EL[a.el].ve - used) / 2));
 }
@@ -547,6 +560,10 @@ function pathBetween(i, j, skipBondId){
    ======================================================================= */
 /* Liefert die Textbausteine eines Atoms oder null (= nur Knick zeichnen) */
 function labelRuns(a){
+  if (isR(a.el)){
+    const idx = a.el.slice(1);
+    return idx ? [{t:'R'}, {t:idx, sup:true}] : [{t:'R'}];
+  }
   const showC = effShowC();
   const nb = bondsOf(a.id).length;
   if (a.el === 'C' && !showC && nb > 0) return null;
@@ -584,7 +601,7 @@ const FONT = w => w + 'px "IBM Plex Sans", -apple-system, Segoe UI, sans-serif';
 function measureRuns(ctx, runs, fs = FS){
   let w = 0;
   for (const r of runs){
-    ctx.font = FONT(r.sub ? fs * 0.72 : fs);
+    ctx.font = FONT(r.sub || r.sup ? fs * 0.72 : fs);
     w += ctx.measureText(r.t).width;
   }
   return {w, h: fs * 1.02};
@@ -596,9 +613,9 @@ function drawRuns(ctx, x, y, runs, color, fs = FS){
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   for (const r of runs){
-    const size = r.sub ? fs * 0.72 : fs;
+    const size = r.sub || r.sup ? fs * 0.72 : fs;
     ctx.font = FONT(size);
-    ctx.fillText(r.t, cx, r.sub ? y + fs * 0.26 : y);
+    ctx.fillText(r.t, cx, r.sub ? y + fs * 0.26 : (r.sup ? y - fs * 0.32 : y));
     cx += ctx.measureText(r.t).width;
   }
 }
@@ -615,6 +632,7 @@ function css(name){
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 function colorOf(el){
+  if (isR(el)) return css('--el-R');
   const map = {H:'--el-H', C:'--el-C', N:'--el-N', O:'--el-O', S:'--el-S', P:'--el-P',
                F:'--el-Hal', Cl:'--el-Hal', Br:'--el-Hal', I:'--el-Hal'};
   return css(map[el] || '--el-C');
@@ -870,6 +888,16 @@ const SUBS = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'�
 const H_FIRST = ['O','S','F','Cl','Br','I'];
 const uniSub = n => String(n).split('').map(d => SUBS[d]).join('');
 
+const SUPS = {'1':'¹','2':'²','3':'³','4':'⁴'};
+const uniSup = s => String(s).split('').map(d => SUPS[d] || d).join('');
+/* R, R¹, R² … – Index hochgestellt, damit er nicht mit einer Anzahl verwechselt wird */
+function rLabel(el, count, mode){
+  const idx = el.slice(1);
+  const sup = idx ? (mode === 'html' ? '<sup>'+idx+'</sup>' : uniSup(idx)) : '';
+  const cnt = count > 1 ? (mode === 'html' ? '<sub>'+count+'</sub>' : uniSub(count)) : '';
+  return 'R' + sup + cnt;
+}
+
 function counts(){
   const c = {};
   for (const a of atoms){
@@ -883,26 +911,40 @@ function sumFormula(){
   const c = counts();
   const keys = Object.keys(c);
   if (!keys.length) return {html:'—', text:'—'};
+  const rKeys = keys.filter(isR).sort();
+  const plain = keys.filter(k => !isR(k));
   const order = [];
   if (c.C){ order.push('C'); if (c.H) order.push('H'); }
-  else if (c.H && keys.length === 2){
+  else if (c.H && plain.length === 2){
     // ohne Kohlenstoff: H₂O, H₂S, HCl – aber NH₃, PH₃
-    const x = keys.find(k => k !== 'H');
+    const x = plain.find(k => k !== 'H');
     if (H_FIRST.includes(x)) order.push('H', x); else order.push(x, 'H');
   }
-  keys.filter(k => !order.includes(k)).sort().forEach(k => order.push(k));
+  plain.filter(k => !order.includes(k)).sort().forEach(k => order.push(k));
   let html = '', text = '';
   for (const k of order){
     html += k + (c[k] > 1 ? '<sub>' + c[k] + '</sub>' : '');
     text += k + (c[k] > 1 ? uniSub(c[k]) : '');
   }
+  for (const k of rKeys){
+    html += rLabel(k, c[k], 'html');
+    text += rLabel(k, c[k], 'text');
+  }
   return {html, text};
 }
 function molarMass(){
   const c = counts();
-  let m = 0;
-  for (const k in c) m += EL[k].m * c[k];
-  return m;
+  let m = 0, hasR = false;
+  for (const k in c){
+    if (isR(k)){ hasR = true; continue; }
+    m += EL[k].m * c[k];
+  }
+  return {m, hasR};
+}
+function massText(){
+  if (!atoms.length) return '—';
+  const {m, hasR} = molarMass();
+  return m.toFixed(2) + ' g/mol' + (hasR ? ' (ohne Reste)' : '');
 }
 
 /* --- Halbstrukturformel --------------------------------------------- */
@@ -975,6 +1017,7 @@ const BONDSYM = {1:'–', 2:'=', 3:'≡'};
 const EN_FIRST = ['O','N','S','F','Cl','Br','I'];   // H₂O, NH₃, HCl … statt OH₂
 function groupStr(id, mode, reverse){
   const a = byId(id);
+  if (isR(a.el)) return rLabel(a.el, 1, mode);
   const h = totalH(a);
   if (!h) return a.el;
   const hs = 'H' + (h > 1 ? (mode === 'html' ? '<sub>'+h+'</sub>' : uniSub(h)) : '');
@@ -1039,12 +1082,19 @@ function condensed(mode){
 /* --- Prüfungen ------------------------------------------------------- */
 function checks(){
   const out = [];
+  let hasR = false;
   for (const a of atoms){
     const s = bondSum(a.id);
+    if (isR(a.el)){
+      hasR = true;
+      if (s > 1) out.push({type:'err', text:'Ein Rest (R) steht für eine Gruppe und kann nur eine Bindung eingehen.'});
+      continue;
+    }
     if (s > EL[a.el].v){
       out.push({type:'err', text:`${a.el}-Atom hat ${s} Bindungen, üblich sind ${EL[a.el].v}.`});
     }
   }
+  if (hasR) out.push({type:'info', text:'Reste (R) sind Platzhalter: Sie liefern keine H-Atome und gehen nicht in die molare Masse ein.'});
   const open = atoms.filter(a => a.el === 'C' && implicitH(a) > 0).length;
   if (!out.length && open){
     out.push({type:'info', text:`Freie Bindungsstellen an ${open} C-Atom(en) werden automatisch mit H aufgefüllt.`});
@@ -1063,7 +1113,7 @@ function refresh(){
   render();
   const sf = sumFormula();
   $('#outSum').innerHTML = sf.html;
-  $('#outMass').textContent = atoms.length ? molarMass().toFixed(2) + ' g/mol' : '—';
+  $('#outMass').textContent = massText();
   const cd = condensed('html');
   $('#outCond').innerHTML = atoms.length ? (cd.ok ? cd.text : 'für Ringe nicht möglich') : '—';
 
@@ -1092,7 +1142,7 @@ function renderTextMode(){
   if (state.mode === 'summe'){
     eyebrow.textContent = 'Summenformel';
     form.innerHTML = sumFormula().html;
-    note.textContent = 'Molare Masse: ' + molarMass().toFixed(2) + ' g/mol';
+    note.textContent = 'Molare Masse: ' + massText();
   } else {
     eyebrow.textContent = 'Halbstrukturformel';
     const cd = condensed('html');
@@ -1303,25 +1353,37 @@ document.querySelectorAll('#tools button').forEach(btn => {
 // Elementknöpfe
 const EL_NAMES = {H:'Wasserstoff', C:'Kohlenstoff', N:'Stickstoff', O:'Sauerstoff', S:'Schwefel',
                   P:'Phosphor', F:'Fluor', Cl:'Chlor', Br:'Brom', I:'Iod'};
-const elBox = $('#elements');
-EL_ORDER.forEach(el => {
+const COLVAR = {H:'--el-H',C:'--el-C',N:'--el-N',O:'--el-O',S:'--el-S',P:'--el-P'};
+const elVar = el => 'var(' + (isR(el) ? '--el-R' : (COLVAR[el] || '--el-Hal')) + ')';
+const allElButtons = () => document.querySelectorAll('#elements button, #rests button');
+
+function makeElButton(el, box){
   const b = document.createElement('button');
   b.className = 'el' + (el === 'C' ? ' on' : '');
-  b.textContent = el; b.dataset.el = el;
-  b.title = EL_NAMES[el] + ' – Bindigkeit ' + EL[el].v;
-  b.style.color = 'var(' + ({H:'--el-H',C:'--el-C',N:'--el-N',O:'--el-O',S:'--el-S',P:'--el-P'}[el] || '--el-Hal') + ')';
-  if (el === 'C') b.style.color = '';
+  b.dataset.el = el;
+  if (isR(el)){
+    const idx = el.slice(1);
+    b.innerHTML = 'R' + (idx ? '<sup style="font-size:.66em">' + idx + '</sup>' : '');
+    b.title = idx ? 'Rest R' + idx + ' – beliebige Gruppe' : 'Rest R – beliebige Gruppe';
+  } else {
+    b.textContent = el;
+    b.title = EL_NAMES[el] + ' – Bindigkeit ' + EL[el].v;
+  }
+  b.style.color = el === 'C' ? '' : elVar(el);
   b.addEventListener('click', () => {
     state.el = el;
-    $('#hint').textContent = EL_NAMES[el] + ' (' + el + '), Bindigkeit ' + EL[el].v + '. ' + HINTS[state.tool];
-    document.querySelectorAll('#elements button').forEach(x => {
+    $('#hint').textContent = (isR(el)
+        ? 'Rest ' + el.replace(/^R/, 'R') + ' – Platzhalter für eine beliebige Gruppe, einbindig. '
+        : EL_NAMES[el] + ' (' + el + '), Bindigkeit ' + EL[el].v + '. ') + HINTS[state.tool];
+    allElButtons().forEach(x => {
       x.classList.toggle('on', x === b);
-      x.style.color = x.classList.contains('on') ? '' :
-        'var(' + ({H:'--el-H',C:'--el-C',N:'--el-N',O:'--el-O',S:'--el-S',P:'--el-P'}[x.dataset.el] || '--el-Hal') + ')';
+      x.style.color = x.classList.contains('on') ? '' : elVar(x.dataset.el);
     });
   });
-  elBox.appendChild(b);
-});
+  box.appendChild(b);
+}
+EL_ORDER.forEach(el => makeElButton(el, $('#elements')));
+R_ORDER.forEach(el => makeElButton(el, $('#rests')));
 
 // Darstellungsarten
 document.querySelectorAll('#modes button').forEach(btn => {
@@ -1680,17 +1742,18 @@ function encodeMol(){
   if (!atoms.length) return '';
   const bb = bbox();
   const idx = new Map(atoms.map((a, i) => [a.id, i]));
-  const A = atoms.map(a => a.el + Math.round(a.x-bb.x0) + ',' + Math.round(a.y-bb.y0)).join(';');
+  const A = atoms.map(a => a.el + ':' + Math.round(a.x-bb.x0) + ',' + Math.round(a.y-bb.y0)).join(';');
   const B = bonds.map(b => idx.get(b.a) + '-' + idx.get(b.b) + ':' + b.order).join(';');
-  return 'MOL1|' + A + '|' + B;
+  return 'MOL2|' + A + '|' + B;
 }
 function decodeMol(txt){
   const p = txt.trim().split('|');
-  if (p.length !== 3 || p[0] !== 'MOL1') throw new Error('Format');
+  if (p.length !== 3 || (p[0] !== 'MOL1' && p[0] !== 'MOL2')) throw new Error('Format');
+  const re = p[0] === 'MOL2' ? /^([A-Za-z0-9]+):(-?\d+),(-?\d+)$/ : /^([A-Z][a-z]?)(-?\d+),(-?\d+)$/;
   const na = [], nb = [];
   let id = 1;
   for (const t of p[1].split(';').filter(Boolean)){
-    const m = t.match(/^([A-Z][a-z]?)(-?\d+),(-?\d+)$/);
+    const m = t.match(re);
     if (!m || !EL[m[1]]) throw new Error('Atom: ' + t);
     na.push({id:id++, el:m[1], x:+m[2], y:+m[3]});
   }
@@ -1753,9 +1816,9 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'y'){ e.preventDefault(); redo(); return; }
   const toolKeys = {b:'build', e:'element', v:'bond', m:'move', x:'erase'};
   if (toolKeys[k]){ document.querySelector(`#tools [data-tool="${toolKeys[k]}"]`).click(); return; }
-  const elKeys = {c:'C', o:'O', n:'N', h:'H', s:'S', f:'F'};
+  const elKeys = {c:'C', o:'O', n:'N', h:'H', s:'S', f:'F', r:'R'};
   if (elKeys[k] && !e.ctrlKey && !e.metaKey){
-    const b = document.querySelector(`#elements [data-el="${elKeys[k]}"]`);
+    const b = document.querySelector(`[data-el="${elKeys[k]}"]`);
     if (b) b.click();
   }
 });
