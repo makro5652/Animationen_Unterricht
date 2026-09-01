@@ -94,6 +94,12 @@ button.el{
 button.ghost{background:transparent}
 button.wide{width:100%}
 
+button.sw{
+  width:28px;height:26px;padding:0;border-radius:5px;border:1px solid var(--ink-3);
+}
+button.sw.on{outline:2px solid var(--accent);outline-offset:1px}
+input[type=range]{width:100%;accent-color:var(--accent);background:transparent}
+
 label.check{display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:3px 0;line-height:1.35}
 label.check input{margin:2px 0 0;accent-color:var(--accent);flex:none}
 label.check.off{opacity:.45;cursor:default}
@@ -193,6 +199,9 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
         <button class="tool on" data-tool="build"><span>Bauen</span><span class="key">B</span></button>
         <button class="tool" data-tool="element"><span>Element ändern</span><span class="key">E</span></button>
         <button class="tool" data-tool="bond"><span>Bindung ändern</span><span class="key">V</span></button>
+        <button class="tool" data-tool="charge"><span>Ladung setzen</span><span class="key">L</span></button>
+        <button class="tool" data-tool="arrow"><span>Pfeil zeichnen</span><span class="key">P</span></button>
+        <button class="tool" data-tool="text"><span>Text setzen</span><span class="key">T</span></button>
         <button class="tool" data-tool="move"><span>Verschieben</span><span class="key">M</span></button>
         <button class="tool" data-tool="erase"><span>Löschen</span><span class="key">X</span></button>
       </div>
@@ -206,6 +215,52 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
     <div class="group">
       <h2>Reste</h2>
       <div class="row" id="rests"></div>
+    </div>
+
+    <div class="group">
+      <h2>Ladung <span style="text-transform:none;letter-spacing:0">(Werkzeug „Ladung setzen“)</span></h2>
+      <div class="row" id="charges">
+        <button class="el on" data-q="1" title="einfach positiv, z. B. Carbenium-Ion">+</button>
+        <button class="el" data-q="-1" title="einfach negativ, z. B. Carbanion">−</button>
+        <button class="el" data-q="2" title="zweifach positiv">2+</button>
+        <button class="el" data-q="-2" title="zweifach negativ">2−</button>
+        <button class="el" data-d="+" title="Partialladung positiv" style="width:46px">δ+</button>
+        <button class="el" data-d="-" title="Partialladung negativ" style="width:46px">δ−</button>
+        <button class="el" data-q="0" title="Ladung entfernen" style="width:46px">ohne</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Pfeilart</h2>
+      <div class="stack" id="arrowKinds"></div>
+
+      <div style="margin-top:9px">
+        <div class="k" style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;
+             text-transform:uppercase;color:var(--text-dim);margin-bottom:5px">Farbe</div>
+        <div class="row" id="arrowColors"></div>
+      </div>
+
+      <div style="margin-top:9px">
+        <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;
+             font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:3px">
+          <span>Krümmung</span><span id="bendVal">0</span>
+        </div>
+        <input type="range" id="bendRange" min="-80" max="80" step="5" value="0">
+      </div>
+
+      <div class="msg info" style="margin-top:7px">
+        Ziehen erzeugt den Pfeil. Ein Tipp wählt einen vorhandenen Pfeil aus – Art, Farbe und
+        Krümmung wirken dann sofort auf ihn. Der Punkt in der Pfeilmitte lässt sich zum Biegen ziehen.
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Text</h2>
+      <div class="stack">
+        <input id="textVal" type="text" placeholder="z. B. Nu^-, H2O, Δ"
+               style="width:100%;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-on-ink);background:var(--ink-2);border:1px solid var(--ink-3);border-radius:6px;padding:7px 8px">
+        <div class="msg info">Ziffern nach Buchstaben werden tiefgestellt (H2O → H₂O); <code>^</code> stellt hoch, <code>_</code> tief. Dann mit dem Werkzeug „Text setzen“ auf die Fläche tippen.</div>
+      </div>
     </div>
 
     <div class="group">
@@ -354,6 +409,14 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
         <button data-h="allText">alle als Text (CH<sub>3</sub>)</button>
         <button data-h="allLine">alle mit Bindungsstrich</button>
       </div>
+      <div class="stack" style="margin-top:7px">
+        <button id="btnManualH">H ausschreiben und einzeln bearbeiten</button>
+        <button id="btnAutoH" class="ghost">zurück zu automatischen H</button>
+      </div>
+      <div class="msg info" id="manualNote" hidden>
+        Manueller Modus: H-Atome werden nicht mehr ergänzt. Du kannst sie einzeln
+        setzen (Element H), verschieben und löschen.
+      </div>
     </div>
 
     <div class="group">
@@ -397,8 +460,10 @@ const isR = el => typeof el === 'string' && el.charAt(0) === 'R';
 /* =======================================================================
    2. Datenmodell
    ======================================================================= */
-let atoms = [];          // {id, el, x, y}
+let atoms = [];          // {id, el, x, y, q?, d?}
 let bonds = [];          // {id, a, b, order}
+let arrows = [];         // {id, kind, x1, y1, x2, y2, bend}
+let labels = [];         // {id, x, y, t}
 let nid = 1;
 const L = 54;            // Bindungslänge in px
 
@@ -422,10 +487,29 @@ function removeAtom(id){
   bonds = bonds.filter(b => b.a !== id && b.b !== id);
 }
 
+/* Ladungen: q = formale Ladung (…, -1, 0, +1, …), d = Partialladung ('+'/'-') */
+const qOf = a => a.q || 0;
+/* Bindigkeit unter Berücksichtigung der Ladung.
+   Für N, O, S, P, Halogene gilt Bindigkeit + Ladung (NH₄⁺: 4, O⁻: 1);
+   Kohlenstoff verliert in beiden Richtungen eine Bindung (Carbenium und
+   Carbanion sind jeweils dreibindig). */
+function valenceOf(a){
+  if (isR(a.el)) return 1;
+  const e = EL[a.el], q = qOf(a);
+  const v = e.ve >= 5 ? e.v + q : e.v - Math.abs(q);
+  return Math.max(0, v);
+}
+
 /* Zahl der nicht gezeichneten (impliziten) H-Atome */
 function implicitH(a){
+  if (state.manualH) return 0;          // manueller Modus: nichts wird ergänzt
   if (a.el === 'H' || isR(a.el)) return 0;
-  return Math.max(0, EL[a.el].v - bondSum(a.id));
+  return Math.max(0, valenceOf(a) - bondSum(a.id));
+}
+/* offene Bindungsstellen – im manuellen Modus für die Prüfung interessant */
+function openSlots(a){
+  if (a.el === 'H' || isR(a.el)) return Math.max(0, valenceOf(a) - bondSum(a.id));
+  return Math.max(0, valenceOf(a) - bondSum(a.id));
 }
 /* gezeichnete H-Nachbarn */
 function explicitH(a){ return neighbors(a.id).filter(n => n.el === 'H').length; }
@@ -435,7 +519,7 @@ function totalH(a){ return implicitH(a) + explicitH(a); }
 function lonePairs(a){
   if (isR(a.el)) return 0;
   const used = bondSum(a.id) + implicitH(a);
-  return Math.max(0, Math.floor((EL[a.el].ve - used) / 2));
+  return Math.max(0, Math.floor((EL[a.el].ve - qOf(a) - used) / 2));
 }
 
 /* =======================================================================
@@ -450,16 +534,34 @@ const state = {
   lp: 'none',          // 'none' | 'dots' | 'line'
   showGrid: true,
   white: false,
-  align: '90'          // '90' | '45' | 'zz'
+  align: '90',         // '90' | '45' | 'zz'
+  charge: {q:1, d:null},
+  manualH: false,
+  arrowKind: 'reaction',
+  arrowColor: 'ink',
+  bend: 0,
+  text: ''
 };
+/* Farbwahl für Pfeile und Texte. 'ink' folgt dem Zeichenstil, die übrigen
+   sind feste Werte, damit sie auch im Export erhalten bleiben. */
+const PALETTE = [
+  {key:'ink',    hex:null,      name:'Schwarz (wie die Struktur)'},
+  {key:'blue',   hex:'#1B6FB8', name:'Blau – Elektronen'},
+  {key:'red',    hex:'#C0392B', name:'Rot'},
+  {key:'green',  hex:'#2C7A5B', name:'Grün'},
+  {key:'orange', hex:'#CC5500', name:'Orange'},
+  {key:'violet', hex:'#7B4FA8', name:'Violett'}
+];
+const paletteHex = key => (PALETTE.find(p => p.key === key) || {}).hex || null;
 const effShowC = () => state.showC || state.hMode === 'allText' || state.hMode === 'allLine';
 const undoStack = [];
 const redoStack = [];
-const snapshot = () => JSON.stringify({atoms, bonds, nid});
+const snapshot = () => JSON.stringify({atoms, bonds, arrows, labels, nid});
 function apply(s){
   const d = JSON.parse(s);
   atoms = d.atoms; bonds = d.bonds; nid = d.nid;
-  selection.clear();
+  arrows = d.arrows || []; labels = d.labels || [];
+  selection.clear(); selArrow = null;
 }
 function pushUndo(){
   undoStack.push(snapshot());
@@ -559,14 +661,22 @@ function pathBetween(i, j, skipBondId){
    5. Beschriftung
    ======================================================================= */
 /* Liefert die Textbausteine eines Atoms oder null (= nur Knick zeichnen) */
+/* Ladungszeichen als hochgestellter Zusatz: ⁺, ⁻, ²⁺ … */
+function chargeText(q){
+  if (!q) return '';
+  const n = Math.abs(q);
+  return (n > 1 ? n : '') + (q > 0 ? '+' : '\u2212');
+}
 function labelRuns(a){
+  const q = qOf(a);
+  const qRun = q ? [{t: chargeText(q), sup:true}] : [];
   if (isR(a.el)){
     const idx = a.el.slice(1);
-    return idx ? [{t:'R'}, {t:idx, sup:true}] : [{t:'R'}];
+    return [{t:'R'}].concat(idx ? [{t:idx, sup:true}] : []).concat(qRun);
   }
   const showC = effShowC();
   const nb = bondsOf(a.id).length;
-  if (a.el === 'C' && !showC && nb > 0) return null;
+  if (a.el === 'C' && !showC && nb > 0 && !q) return null;
 
   let hCount = 0;
   if (a.el !== 'H'){
@@ -585,14 +695,14 @@ function labelRuns(a){
     hs.push({t:'H'});
     if (hCount > 1) hs.push({t:String(hCount), sub:true});
   }
-  if (!hs.length) return sym;
+  if (!hs.length) return sym.concat(qRun);
 
   // Terminale Gruppe nach links spiegeln: H₃C– statt –CH₃
   if (nb === 1){
     const ang = angleTo(a, neighbors(a.id)[0]);
-    if (Math.cos(ang) > 0.35) return hs.concat(sym);
+    if (Math.cos(ang) > 0.35) return hs.concat(sym).concat(qRun);
   }
-  return sym.concat(hs);
+  return sym.concat(hs).concat(qRun);
 }
 
 const FS = 16.5;                       // Schriftgröße der Atomsymbole
@@ -643,6 +753,120 @@ function boxCut(dx, dy, hw, hh){
   const tx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
   const ty = dy !== 0 ? hh / Math.abs(dy) : Infinity;
   return Math.min(tx, ty, 0.45);
+}
+
+/* --- Pfeile ----------------------------------------------------------
+   kind: reaction  →   equilibrium ⇌   resonance ↔
+         pair (gebogen, ganze Spitze: Elektronenpaar)
+         single (gebogen, halbe Spitze/Fischhaken: einzelnes Elektron)
+         plain (dünner Zeiger für Beschriftungen)                        */
+const ARROW_KINDS = {
+  reaction:   {label:'Reaktion  →',        curved:false, def:0},
+  equilibrium:{label:'Gleichgewicht  ⇌',   curved:false, def:0},
+  resonance:  {label:'Mesomerie  ↔',       curved:false, def:0},
+  pair:       {label:'Elektronenpaar  ⤻',  curved:true,  def:0.30},
+  single:     {label:'Einzelelektron  ⤺',  curved:true,  def:0.30},
+  plain:      {label:'Zeiger  →',          curved:false, def:0}
+};
+const isElectronArrow = k => k === 'pair' || k === 'single';
+
+function arrowGeom(ar){
+  const dx = ar.x2-ar.x1, dy = ar.y2-ar.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy/len, ny = dx/len;
+  const b = ar.bend || 0;
+  return {
+    len, nx, ny,
+    cx: (ar.x1+ar.x2)/2 + nx*b*len,
+    cy: (ar.y1+ar.y2)/2 + ny*b*len
+  };
+}
+/* Punkt und Steigung auf der quadratischen Kurve */
+function arrowPoint(ar, t){
+  const g = arrowGeom(ar), u = 1-t;
+  return {
+    x: u*u*ar.x1 + 2*u*t*g.cx + t*t*ar.x2,
+    y: u*u*ar.y1 + 2*u*t*g.cy + t*t*ar.y2
+  };
+}
+function drawHead(c, x, y, ang, full, size, side){
+  const s = size || 10, a = 0.40;
+  const p1x = x - s*Math.cos(ang - a), p1y = y - s*Math.sin(ang - a);
+  const p2x = x - s*Math.cos(ang + a), p2y = y - s*Math.sin(ang + a);
+  if (full){
+    c.beginPath();
+    c.moveTo(x, y); c.lineTo(p1x, p1y); c.lineTo(p2x, p2y); c.closePath();
+    c.fill();
+  } else if (side === 1){
+    c.beginPath(); c.moveTo(x, y); c.lineTo(p2x, p2y); c.stroke();
+  } else {
+    c.beginPath(); c.moveTo(x, y); c.lineTo(p1x, p1y); c.stroke();
+  }
+}
+function drawArrow(c, ar, ext){
+  const col = ar.color ? ar.color
+            : (isElectronArrow(ar.kind) ? css('--accent') : css('--el-C'));
+  c.strokeStyle = col; c.fillStyle = col;
+  c.lineWidth = ar.kind === 'plain' ? 1.5 : 2;
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const g = arrowGeom(ar);
+  if (ext){ ext(ar.x1, ar.y1, 12); ext(ar.x2, ar.y2, 12); ext(g.cx, g.cy, 12); }
+
+  if (ar.kind === 'equilibrium'){
+    const o = 3.4, ang = Math.atan2(ar.y2-ar.y1, ar.x2-ar.x1);
+    // Hinpfeil oben, Rückpfeil unten; die Haken zeigen jeweils nach außen
+    c.beginPath();
+    c.moveTo(ar.x1 - g.nx*o, ar.y1 - g.ny*o);
+    c.lineTo(ar.x2 - g.nx*o, ar.y2 - g.ny*o);
+    c.stroke();
+    drawHead(c, ar.x2 - g.nx*o, ar.y2 - g.ny*o, ang, false, 11, 1);
+    c.beginPath();
+    c.moveTo(ar.x2 + g.nx*o, ar.y2 + g.ny*o);
+    c.lineTo(ar.x1 + g.nx*o, ar.y1 + g.ny*o);
+    c.stroke();
+    drawHead(c, ar.x1 + g.nx*o, ar.y1 + g.ny*o, ang + Math.PI, false, 11, 1);
+    return;
+  }
+  c.beginPath();
+  c.moveTo(ar.x1, ar.y1);
+  if (ar.bend) c.quadraticCurveTo(g.cx, g.cy, ar.x2, ar.y2);
+  else c.lineTo(ar.x2, ar.y2);
+  c.stroke();
+  const angEnd = ar.bend ? Math.atan2(ar.y2-g.cy, ar.x2-g.cx)
+                         : Math.atan2(ar.y2-ar.y1, ar.x2-ar.x1);
+  drawHead(c, ar.x2, ar.y2, angEnd, ar.kind !== 'single', ar.kind === 'plain' ? 8 : 10);
+  if (ar.kind === 'resonance'){
+    const angStart = ar.bend ? Math.atan2(ar.y1-g.cy, ar.x1-g.cx)
+                             : Math.atan2(ar.y1-ar.y2, ar.x1-ar.x2);
+    drawHead(c, ar.x1, ar.y1, angStart, true, 10);
+  }
+}
+
+/* --- Textmarken ------------------------------------------------------
+   „H2O“ wird zu H₂O, „^+“ setzt hoch, „_2“ tief.                       */
+function parseLabelText(t){
+  const runs = [];
+  for (let i = 0; i < t.length; i++){
+    const ch = t[i];
+    if ((ch === '^' || ch === '_') && i+1 < t.length){
+      runs.push({t:t[++i], sup: ch === '^', sub: ch === '_'});
+      continue;
+    }
+    const prev = runs.length ? runs[runs.length-1] : null;
+    if (/\d/.test(ch) && prev && !prev.sup && /[A-Za-z)\]]/.test(prev.t)){
+      runs.push({t:ch, sub:true});
+      continue;
+    }
+    runs.push({t:ch});
+  }
+  // gleichartige Abschnitte zusammenfassen (kürzerer SVG-Export, saubere Laufweite)
+  const merged = [];
+  for (const r of runs){
+    const last = merged[merged.length-1];
+    if (last && !!last.sub === !!r.sub && !!last.sup === !!r.sup) last.t += r.t;
+    else merged.push({t:r.t, sub:r.sub, sup:r.sup});
+  }
+  return merged.length ? merged : [{t:''}];
 }
 
 function drawScene(c, opt){
@@ -750,6 +974,7 @@ function drawScene(c, opt){
   }
 
   /* --- Freie Elektronenpaare --- */
+  const lpDirs = new Map();
   if (state.lp !== 'none'){
     for (const a of atoms){
       const lp = lonePairs(a);
@@ -758,6 +983,7 @@ function drawScene(c, opt){
         ? hAtoms.filter(h => h.parent.id === a.id).map(h => angleTo(a, h))
         : [];
       const dirs = freeDirs(a, lp, extra, L * 0.55);
+      lpDirs.set(a.id, dirs);
       const halo = halos.get(a.id);
       const r = (halo ? Math.max(halo.hw, halo.hh) : 3) + (state.lp === 'line' ? 8 : 7);
       c.fillStyle = css('--accent');
@@ -784,6 +1010,21 @@ function drawScene(c, opt){
     }
   }
 
+  /* --- Partialladungen δ+ / δ− --- */
+  for (const a of atoms){
+    if (!a.d) continue;
+    const extra = (state.hMode === 'allLine'
+        ? hAtoms.filter(h => h.parent.id === a.id).map(h => angleTo(a, h)) : [])
+      .concat(lpDirs.get(a.id) || []);
+    const d = freeDirs(a, 1, extra, L * 0.6)[0];
+    const halo = halos.get(a.id);
+    const r = (halo ? Math.max(halo.hw, halo.hh) : 3) + 14;
+    const px = a.x + r*Math.cos(d), py = a.y + r*Math.sin(d);
+    const runs = [{t:'\u03B4'}, {t: a.d === '+' ? '+' : '\u2212', sup:true}];
+    ext(px, py, 12, 10);
+    drawRuns(c, px, py, runs, css(a.d === '+' ? '--el-O' : '--accent'), FS * 0.86);
+  }
+
   /* --- Beschriftungen --- */
   for (const a of atoms){
     const runs = runsMap.get(a.id);
@@ -792,6 +1033,15 @@ function drawScene(c, opt){
   }
   for (const h of hAtoms){
     drawRuns(c, h.x, h.y, hRuns, colorOf('H'));
+  }
+
+  /* --- Pfeile und Textmarken liegen über der Struktur --- */
+  for (const ar of arrows) drawArrow(c, ar, ext);
+  for (const lb of labels){
+    const runs = parseLabelText(lb.t);
+    const m = measureRuns(c, runs);
+    ext(lb.x, lb.y, m.w/2 + 2, m.h/2 + 2);
+    drawRuns(c, lb.x, lb.y, runs, lb.color || css('--el-C'));
   }
 }
 
@@ -809,6 +1059,15 @@ function drawGrid(){
 let hover = null;     // {type:'atom'|'bond', id}
 let drag = null;      // {from,…} | {moveId} | {sel,…} | {lasso}
 let selection = new Set();   // markierte Atome (Werkzeug „Verschieben“)
+let selArrow = null;         // ausgewählter Pfeil (Werkzeug „Pfeil“)
+
+function arrowMidAt(p, r = 14){
+  for (let i = arrows.length-1; i >= 0; i--){
+    const m = arrowPoint(arrows[i], 0.5);
+    if (Math.hypot(m.x-p.x, m.y-p.y) < r) return arrows[i];
+  }
+  return null;
+}
 
 function inPoly(pt, poly){
   let inside = false;
@@ -855,6 +1114,27 @@ function render(){
   drawScene(ctx, {});
 
   // Vorschau beim Ziehen
+  if (state.tool === 'arrow' && selArrow != null){
+    const ar = arrows.find(x => x.id === selArrow);
+    if (ar){
+      const g = arrowGeom(ar);
+      ctx.strokeStyle = 'rgba(27,111,184,.25)';
+      ctx.lineWidth = 11; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(ar.x1, ar.y1);
+      if (ar.bend) ctx.quadraticCurveTo(g.cx, g.cy, ar.x2, ar.y2); else ctx.lineTo(ar.x2, ar.y2);
+      ctx.stroke();
+      const m = arrowPoint(ar, 0.5);
+      ctx.fillStyle = css('--accent');
+      for (const [x, y, r] of [[ar.x1, ar.y1, 3.5], [ar.x2, ar.y2, 3.5], [m.x, m.y, 5]]){
+        ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+      }
+    }
+  }
+  if (drag && drag.arrowNew){
+    const n = drag.arrowNew;
+    drawArrow(ctx, {kind:state.arrowKind, x1:n.x1, y1:n.y1, x2:n.x2, y2:n.y2,
+                    bend: state.bend, color: paletteHex(state.arrowColor)}, null);
+  }
   if (drag && drag.lasso && drag.lasso.length > 1){
     ctx.beginPath();
     ctx.moveTo(drag.lasso[0].x, drag.lasso[0].y);
@@ -888,8 +1168,13 @@ const SUBS = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'�
 const H_FIRST = ['O','S','F','Cl','Br','I'];
 const uniSub = n => String(n).split('').map(d => SUBS[d]).join('');
 
-const SUPS = {'1':'¹','2':'²','3':'³','4':'⁴'};
+const SUPS = {'1':'¹','2':'²','3':'³','4':'⁴','+':'⁺','-':'⁻','\u2212':'⁻'};
 const uniSup = s => String(s).split('').map(d => SUPS[d] || d).join('');
+const totalCharge = () => atoms.reduce((s, a) => s + qOf(a), 0);
+function chargeMarkup(q, mode){
+  if (!q) return '';
+  return mode === 'html' ? '<sup>' + chargeText(q) + '</sup>' : uniSup(chargeText(q));
+}
 /* R, R¹, R² … – Index hochgestellt, damit er nicht mit einer Anzahl verwechselt wird */
 function rLabel(el, count, mode){
   const idx = el.slice(1);
@@ -916,9 +1201,10 @@ function sumFormula(){
   const order = [];
   if (c.C){ order.push('C'); if (c.H) order.push('H'); }
   else if (c.H && plain.length === 2){
-    // ohne Kohlenstoff: H₂O, H₂S, HCl – aber NH₃, PH₃
+    // ohne Kohlenstoff: H₂O, H₂S, HCl – aber NH₃, PH₃ und als Anion OH⁻
     const x = plain.find(k => k !== 'H');
-    if (H_FIRST.includes(x)) order.push('H', x); else order.push(x, 'H');
+    const anionO = x === 'O' && totalCharge() < 0;
+    if (H_FIRST.includes(x) && !anionO) order.push('H', x); else order.push(x, 'H');
   }
   plain.filter(k => !order.includes(k)).sort().forEach(k => order.push(k));
   let html = '', text = '';
@@ -930,6 +1216,8 @@ function sumFormula(){
     html += rLabel(k, c[k], 'html');
     text += rLabel(k, c[k], 'text');
   }
+  const q = totalCharge();
+  if (q){ html += chargeMarkup(q, 'html'); text += chargeMarkup(q, 'text'); }
   return {html, text};
 }
 function molarMass(){
@@ -1017,11 +1305,12 @@ const BONDSYM = {1:'–', 2:'=', 3:'≡'};
 const EN_FIRST = ['O','N','S','F','Cl','Br','I'];   // H₂O, NH₃, HCl … statt OH₂
 function groupStr(id, mode, reverse){
   const a = byId(id);
-  if (isR(a.el)) return rLabel(a.el, 1, mode);
+  const qm = chargeMarkup(qOf(a), mode);
+  if (isR(a.el)) return rLabel(a.el, 1, mode) + qm;
   const h = totalH(a);
-  if (!h) return a.el;
+  if (!h) return a.el + qm;
   const hs = 'H' + (h > 1 ? (mode === 'html' ? '<sub>'+h+'</sub>' : uniSub(h)) : '');
-  return reverse ? hs + a.el : a.el + hs;
+  return (reverse ? hs + a.el : a.el + hs) + qm;
 }
 /* Klammerinhalt: (OH), (CH₃), aber (=O) mit Bindungszeichen */
 const branchPrefix = order => (order === 1 ? '' : BONDSYM[order]);
@@ -1064,7 +1353,7 @@ function condensed(mode){
       const next = i < path.length-1 ? path[i+1] : null;
       // Am Kettenanfang steht H vorn, wenn das Atom elektronegativer ist: HO–CH₂…
       const el0 = byId(id).el;
-      const rev = i === 0 && totalH(byId(id)) > 0 &&
+      const rev = i === 0 && totalH(byId(id)) > 0 && qOf(byId(id)) >= 0 &&
                   (path.length > 1 ? EN_FIRST.includes(el0) : H_FIRST.includes(el0));
       s += groupStr(id, mode, rev);
       const branches = heavyNeighbors(id).filter(n => n !== prev && n !== next && !visited.has(n));
@@ -1090,13 +1379,23 @@ function checks(){
       if (s > 1) out.push({type:'err', text:'Ein Rest (R) steht für eine Gruppe und kann nur eine Bindung eingehen.'});
       continue;
     }
-    if (s > EL[a.el].v){
-      out.push({type:'err', text:`${a.el}-Atom hat ${s} Bindungen, üblich sind ${EL[a.el].v}.`});
+    if (s > valenceOf(a)){
+      const q = qOf(a);
+      out.push({type:'err', text:`${a.el}${q ? chargeText(q) : ''}-Atom hat ${s} Bindungen, üblich sind ${valenceOf(a)}.`});
     }
   }
+  const tq = totalCharge();
+  if (tq) out.push({type:'info', text:'Gesamtladung des Teilchens: ' + (tq > 0 ? '+' : '\u2212') + Math.abs(tq) + '.'});
+  if (atoms.some(a => a.d)) out.push({type:'info', text:'δ-Zeichen kennzeichnen Partialladungen und verändern weder Formel noch Bindigkeit.'});
   if (hasR) out.push({type:'info', text:'Reste (R) sind Platzhalter: Sie liefern keine H-Atome und gehen nicht in die molare Masse ein.'});
   const open = atoms.filter(a => a.el === 'C' && implicitH(a) > 0).length;
-  if (!out.length && open){
+  if (state.manualH){
+    const slots = atoms.reduce((s, a) => s + (isR(a.el) ? 0 : Math.max(0, valenceOf(a) - bondSum(a.id))), 0);
+    out.push({type:'info', text: slots
+      ? `Manueller H-Modus: ${slots} offene Bindungsstelle(n) werden nicht ergänzt.`
+      : 'Manueller H-Modus: alle Bindungsstellen sind besetzt.'});
+  }
+  else if (!out.length && open){
     out.push({type:'info', text:`Freie Bindungsstellen an ${open} C-Atom(en) werden automatisch mit H aufgefüllt.`});
   }
   const comps = componentsHeavy();
@@ -1162,6 +1461,9 @@ const HINTS = {
   build : 'Tippen auf leere Fläche: neues Atom. Tippen auf ein Atom: Kette verlängern. Ziehen: Bindung in gewünschte Richtung.',
   element:'Auf ein Atom tippen, um es in das links gewählte Element zu ändern.',
   bond  : 'Auf eine Bindung tippen: Einfach- → Doppel- → Dreifachbindung.',
+  charge: 'Ladung links wählen, dann auf ein Atom tippen. „ohne“ entfernt die Ladung wieder.',
+  arrow : 'Von der Elektronenquelle zum Ziel ziehen. Ein Tipp auf einen Bogen klappt ihn um.',
+  text  : 'Text links eingeben, dann auf die Fläche tippen. Erneutes Tippen auf einen Text ersetzt ihn.',
   move  : 'Atom ziehen verschiebt es einzeln. Auf freier Fläche ziehen: Lasso um mehrere Atome; danach ein markiertes Atom ziehen.',
   erase : 'Auf ein Atom oder eine Bindung tippen, um sie zu entfernen.'
 };
@@ -1194,6 +1496,33 @@ function bondAt(p, r = 9){
   }
   return null;
 }
+function labelAt(p){
+  const c = ctx;
+  for (let i = labels.length-1; i >= 0; i--){
+    const lb = labels[i];
+    const m = measureRuns(c, parseLabelText(lb.t));
+    if (Math.abs(p.x-lb.x) < m.w/2 + 6 && Math.abs(p.y-lb.y) < m.h/2 + 6) return lb;
+  }
+  return null;
+}
+function arrowAt(p, r = 10){
+  for (let i = arrows.length-1; i >= 0; i--){
+    const ar = arrows[i];
+    for (let t = 0; t <= 1.0001; t += 0.05){
+      const q = arrowPoint(ar, t);
+      if (Math.hypot(q.x-p.x, q.y-p.y) < r) return ar;
+    }
+  }
+  return null;
+}
+function arrowEndAt(p, r = 12){
+  for (let i = arrows.length-1; i >= 0; i--){
+    const ar = arrows[i];
+    if (Math.hypot(ar.x1-p.x, ar.y1-p.y) < r) return {ar, end:1};
+    if (Math.hypot(ar.x2-p.x, ar.y2-p.y) < r) return {ar, end:2};
+  }
+  return null;
+}
 function snapAngle(a){
   const step = Math.PI / 6;                 // 30°
   return Math.round(a / step) * step;
@@ -1207,10 +1536,23 @@ cv.addEventListener('pointerdown', e => {
   downPt = p; moved = false;
   const a = atomAt(p), b = a ? null : bondAt(p);
 
-  if (state.tool === 'move'){
-    if (a && selection.has(a.id)){ pushUndo(); drag = {sel:[...selection], lx:p.x, ly:p.y}; }
+  if (state.tool === 'arrow'){
+    const am = arrowMidAt(p);
+    if (am){ pushUndo(); selArrow = am.id; drag = {bendArrow:am}; }
+    else drag = {arrowNew:{x1:p.x, y1:p.y, x2:p.x, y2:p.y}};
+  }
+  else if (state.tool === 'move'){
+    const lb = labelAt(p);
+    if (lb){ pushUndo(); drag = {label:lb, lx:p.x, ly:p.y}; }
+    else if (a && selection.has(a.id)){ pushUndo(); drag = {sel:[...selection], lx:p.x, ly:p.y}; }
     else if (a){ selection.clear(); pushUndo(); drag = {moveId:a.id, x:p.x, y:p.y}; }
-    else { drag = {lasso:[p]}; }
+    else {
+      const ae = arrowEndAt(p);
+      const av = ae ? null : arrowAt(p);
+      if (ae){ pushUndo(); drag = {arrowEnd:ae, lx:p.x, ly:p.y}; }
+      else if (av){ pushUndo(); drag = {arrowMove:av, lx:p.x, ly:p.y}; }
+      else drag = {lasso:[p]};
+    }
   }
   else if (state.tool === 'build' && a){ drag = {from:a.id, x:p.x, y:p.y}; }
   render();
@@ -1220,6 +1562,34 @@ cv.addEventListener('pointermove', e => {
   const p = pos(e);
   if (downPt && Math.hypot(p.x-downPt.x, p.y-downPt.y) > 5) moved = true;
 
+  if (drag && drag.bendArrow){
+    const ar = drag.bendArrow;
+    const dx = ar.x2-ar.x1, dy = ar.y2-ar.y1, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy/len, ny = dx/len;
+    const mx = (ar.x1+ar.x2)/2, my = (ar.y1+ar.y2)/2;
+    // Die Kurve läuft bei t = 0,5 durch Mitte + n·bend·len/2
+    const b = 2 * ((p.x-mx)*nx + (p.y-my)*ny) / len;
+    ar.bend = Math.max(-1.2, Math.min(1.2, b));
+    state.bend = ar.bend;
+    syncArrowUI();
+    render();
+    return;
+  }
+  if (drag && drag.arrowNew){ drag.arrowNew.x2 = p.x; drag.arrowNew.y2 = p.y; render(); return; }
+  if (drag && drag.label){
+    drag.label.x += p.x - drag.lx; drag.label.y += p.y - drag.ly;
+    drag.lx = p.x; drag.ly = p.y; render(); return;
+  }
+  if (drag && drag.arrowEnd){
+    const {ar, end} = drag.arrowEnd;
+    if (end === 1){ ar.x1 = p.x; ar.y1 = p.y; } else { ar.x2 = p.x; ar.y2 = p.y; }
+    render(); return;
+  }
+  if (drag && drag.arrowMove){
+    const ar = drag.arrowMove, dx = p.x - drag.lx, dy = p.y - drag.ly;
+    ar.x1 += dx; ar.y1 += dy; ar.x2 += dx; ar.y2 += dy;
+    drag.lx = p.x; drag.ly = p.y; render(); return;
+  }
   if (drag && drag.lasso){
     const last = drag.lasso[drag.lasso.length - 1];
     if (Math.hypot(p.x - last.x, p.y - last.y) > 3) drag.lasso.push(p);
@@ -1263,6 +1633,32 @@ cv.addEventListener('pointerup', e => {
   const wasDrag = drag;
   drag = null;
 
+  if (wasDrag && wasDrag.bendArrow){ refresh(); downPt = null; return; }
+  if (wasDrag && wasDrag.arrowNew){
+    const n = wasDrag.arrowNew;
+    if (Math.hypot(n.x2-n.x1, n.y2-n.y1) > 16){
+      pushUndo();
+      const ar = {id:nid++, kind:state.arrowKind, x1:n.x1, y1:n.y1, x2:n.x2, y2:n.y2,
+                  bend: state.bend, color: paletteHex(state.arrowColor)};
+      arrows.push(ar);
+      selArrow = ar.id;
+      refresh();
+    } else {                                  // kurzer Tipp: Pfeil auswählen
+      const ar = arrowAt(p);
+      selArrow = ar ? ar.id : null;
+      if (ar){
+        state.arrowKind = ar.kind;
+        state.bend = ar.bend || 0;
+        state.arrowColor = (PALETTE.find(x => x.hex === ar.color) || PALETTE[0]).key;
+      }
+      syncArrowUI();
+      render();
+    }
+    downPt = null; return;
+  }
+  if (wasDrag && (wasDrag.label || wasDrag.arrowEnd || wasDrag.arrowMove)){
+    refresh(); downPt = null; return;
+  }
   if (wasDrag && wasDrag.lasso){
     if (wasDrag.lasso.length > 2){
       selection = new Set(atoms.filter(at => inPoly(at, wasDrag.lasso)).map(at => at.id));
@@ -1325,8 +1721,31 @@ cv.addEventListener('pointerup', e => {
     pushUndo(); a.el = state.el;
   } else if (state.tool === 'bond' && b){
     pushUndo(); b.order = b.order % 3 + 1;
+  } else if (state.tool === 'charge' && a){
+    pushUndo();
+    const ch = state.charge;
+    if (ch.d){ a.d = ch.d; a.q = 0; }
+    else if (ch.q === 0){ a.q = 0; a.d = null; }
+    else { a.q = ch.q; a.d = null; }
+  } else if (state.tool === 'text'){
+    const lb = labelAt(p);
+    const val = $('#textVal').value.trim();
+    if (lb){
+      pushUndo();
+      if (val){ lb.t = val; lb.color = paletteHex(state.arrowColor); }
+      else labels = labels.filter(x => x.id !== lb.id);
+    } else if (val){
+      pushUndo();
+      labels.push({id:nid++, x:p.x, y:p.y, t:val, color: paletteHex(state.arrowColor)});
+    } else {
+      $('#hint').textContent = 'Erst links einen Text eingeben, dann auf die Fläche tippen.';
+    }
   } else if (state.tool === 'erase'){
-    if (a){ pushUndo(); removeAtom(a.id); }
+    const lb = labelAt(p);
+    const ar = lb ? null : arrowAt(p);
+    if (lb){ pushUndo(); labels = labels.filter(x => x.id !== lb.id); }
+    else if (ar){ pushUndo(); arrows = arrows.filter(x => x.id !== ar.id); if (selArrow === ar.id) selArrow = null; }
+    else if (a){ pushUndo(); removeAtom(a.id); }
     else if (b){ pushUndo(); bonds = bonds.filter(x => x.id !== b.id); }
   }
   downPt = null;
@@ -1343,6 +1762,7 @@ document.querySelectorAll('#tools button').forEach(btn => {
   btn.addEventListener('click', () => {
     state.tool = btn.dataset.tool;
     selection.clear();
+    if (state.tool !== 'arrow') selArrow = null;
     document.querySelectorAll('#tools button').forEach(b => b.classList.toggle('on', b === btn));
     $('#hint').textContent = HINTS[state.tool];
     cv.style.cursor = state.tool === 'move' ? 'grab' : (state.tool === 'erase' ? 'not-allowed' : 'crosshair');
@@ -1384,6 +1804,103 @@ function makeElButton(el, box){
 }
 EL_ORDER.forEach(el => makeElButton(el, $('#elements')));
 R_ORDER.forEach(el => makeElButton(el, $('#rests')));
+
+// Pfeilarten, Farbe und Krümmung
+const selectedArrow = () => (selArrow == null ? null : arrows.find(x => x.id === selArrow));
+function syncArrowUI(){
+  document.querySelectorAll('#arrowKinds button')
+    .forEach(x => x.classList.toggle('on', x.dataset.kind === state.arrowKind));
+  document.querySelectorAll('#arrowColors button')
+    .forEach(x => x.classList.toggle('on', x.dataset.col === state.arrowColor));
+  $('#bendRange').value = Math.round(state.bend * 100);
+  $('#bendVal').textContent = Math.round(state.bend * 100);
+}
+const arrowBox = $('#arrowKinds');
+Object.keys(ARROW_KINDS).forEach(k => {
+  const b = document.createElement('button');
+  b.textContent = ARROW_KINDS[k].label;
+  b.dataset.kind = k;
+  if (k === 'reaction') b.classList.add('on');
+  b.addEventListener('click', () => {
+    state.arrowKind = k;
+    const ar = selectedArrow();
+    if (ar){ pushUndo(); ar.kind = k; refresh(); }
+    else state.bend = ARROW_KINDS[k].def;      // sinnvolle Voreinstellung je Art
+    syncArrowUI();
+    if (state.tool !== 'arrow') document.querySelector('#tools [data-tool="arrow"]').click();
+  });
+  arrowBox.appendChild(b);
+});
+const colBox = $('#arrowColors');
+PALETTE.forEach(p => {
+  const b = document.createElement('button');
+  b.className = 'sw' + (p.key === 'ink' ? ' on' : '');
+  b.dataset.col = p.key;
+  b.title = p.name;
+  b.style.background = p.hex || 'var(--el-C)';
+  b.addEventListener('click', () => {
+    state.arrowColor = p.key;
+    const ar = selectedArrow();
+    if (ar){ pushUndo(); ar.color = p.hex; refresh(); }
+    syncArrowUI();
+  });
+  colBox.appendChild(b);
+});
+$('#bendRange').addEventListener('input', e => {
+  state.bend = +e.target.value / 100;
+  const ar = selectedArrow();
+  if (ar){ ar.bend = state.bend; render(); }
+  $('#bendVal').textContent = e.target.value;
+});
+$('#bendRange').addEventListener('change', () => { if (selectedArrow()) refresh(); });
+
+// Wasserstoff: automatisch oder manuell
+function setManualH(on){
+  state.manualH = on;
+  $('#manualNote').hidden = !on;
+  document.querySelectorAll('#hmodes button').forEach(b => {
+    b.disabled = on;
+    b.style.opacity = on ? .45 : 1;
+  });
+  $('#btnManualH').classList.toggle('on', on);
+}
+$('#btnManualH').addEventListener('click', () => {
+  pushUndo();
+  for (const a of atoms.slice()){
+    const n = implicitH(a);
+    if (!n) continue;
+    const dirs = freeDirs(a, n, [], L * 0.74);
+    for (const d of dirs){
+      const h = addAtom('H', a.x + L*0.74*Math.cos(d), a.y + L*0.74*Math.sin(d));
+      addBond(a.id, h.id, 1);
+    }
+  }
+  setManualH(true);
+  setH('allLine');
+  syncControls();
+  refresh();
+  $('#hint').textContent = 'H-Atome sind jetzt eigenständig: verschieben, löschen oder mit Element H ergänzen.';
+});
+$('#btnAutoH').addEventListener('click', () => {
+  pushUndo();
+  const drop = atoms.filter(a => a.el === 'H' && bondsOf(a.id).length === 1
+                                && byId(partner(bondsOf(a.id)[0], a.id)).el !== 'H');
+  drop.forEach(h => removeAtom(h.id));
+  setManualH(false);
+  setH('hetero');
+  syncControls();
+  refresh();
+});
+
+// Ladungsknöpfe
+document.querySelectorAll('#charges button').forEach(b => {
+  b.addEventListener('click', () => {
+    state.charge = b.dataset.d ? {q:0, d:b.dataset.d} : {q:+b.dataset.q, d:null};
+    document.querySelectorAll('#charges button').forEach(x => x.classList.toggle('on', x === b));
+    const t = document.querySelector('#tools [data-tool="charge"]');
+    if (state.tool !== 'charge') t.click();
+  });
+});
 
 // Darstellungsarten
 document.querySelectorAll('#modes button').forEach(btn => {
@@ -1436,19 +1953,26 @@ $('#whiteBg').addEventListener('change', e => {
 // Blattfunktionen
 $('#btnUndo').addEventListener('click', undo);
 $('#btnRedo').addEventListener('click', redo);
-$('#btnClear').addEventListener('click', () => { pushUndo(); atoms = []; bonds = []; selection.clear(); refresh(); });
+$('#btnClear').addEventListener('click', () => {
+  pushUndo(); atoms = []; bonds = []; arrows = []; labels = []; selection.clear(); selArrow = null; refresh();
+});
 $('#btnCenter').addEventListener('click', () => { centerView(); refresh(); });
 
 function bbox(){
-  if (!atoms.length) return null;
+  if (!atoms.length && !arrows.length && !labels.length) return null;
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-  for (const a of atoms){ x0=Math.min(x0,a.x); y0=Math.min(y0,a.y); x1=Math.max(x1,a.x); y1=Math.max(y1,a.y); }
+  const put = (x,y) => { x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y); };
+  for (const a of atoms) put(a.x, a.y);
+  for (const a of arrows){ put(a.x1, a.y1); put(a.x2, a.y2); }
+  for (const l of labels) put(l.x, l.y);
   return {x0,y0,x1,y1};
 }
 function centerView(){
   const bb = bbox(); if (!bb) return;
   const dx = W/2 - (bb.x0+bb.x1)/2, dy = H/2 - (bb.y0+bb.y1)/2;
   atoms.forEach(a => { a.x += dx; a.y += dy; });
+  arrows.forEach(a => { a.x1 += dx; a.y1 += dy; a.x2 += dx; a.y2 += dy; });
+  labels.forEach(l => { l.x += dx; l.y += dy; });
 }
 
 /* --- Begradigen ------------------------------------------------------
@@ -1662,12 +2186,12 @@ function renderToCanvas(scale){
   return off;
 }
 $('#btnPng').addEventListener('click', () => {
-  if (!atoms.length) return;
+  if (!bbox()) return;
   renderToCanvas(3).toBlob(b => download(b, 'strukturformel.png'));
 });
 $('#btnCopyImg').addEventListener('click', () => {
   const btn = $('#btnCopyImg');
-  if (!atoms.length) return;
+  if (!bbox()) return;
   renderToCanvas(3).toBlob(async blob => {
     try {
       await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
@@ -1696,6 +2220,9 @@ SvgCtx.prototype = {
   beginPath(){ this._d = ''; this._circles = []; },
   moveTo(x, y){ this._d += 'M' + this._x(x) + ' ' + this._y(y) + ' '; },
   lineTo(x, y){ this._d += 'L' + this._x(x) + ' ' + this._y(y) + ' '; },
+  quadraticCurveTo(cx, cy, x, y){
+    this._d += 'Q' + this._x(cx) + ' ' + this._y(cy) + ' ' + this._x(x) + ' ' + this._y(y) + ' ';
+  },
   arc(x, y, r){ this._circles.push({x:this._x(x), y:this._y(y), r}); },
   fillRect(x, y, w, h){
     this.parts.push('<rect x="'+this._x(x)+'" y="'+this._y(y)+'" width="'+w+'" height="'+h+
@@ -1725,7 +2252,7 @@ SvgCtx.prototype = {
   }
 };
 $('#btnSvg').addEventListener('click', () => {
-  if (!atoms.length) return;
+  if (!bbox()) return;
   const bb = sceneBounds(), m = 22;
   const w = Math.round((bb.x1-bb.x0) + 2*m), h = Math.round((bb.y1-bb.y0) + 2*m);
   const s = new SvgCtx();
@@ -1738,31 +2265,72 @@ $('#btnSvg').addEventListener('click', () => {
 });
 
 /* --- Molekül-Code ---------------------------------------------------- */
+function qCode(a){
+  if (a.d) return a.d === '+' ? 'd+' : 'd-';
+  const q = qOf(a);
+  return q ? (Math.abs(q) > 1 ? Math.abs(q) : '') + (q > 0 ? '+' : '-') : '';
+}
+function applyQCode(atom, code){
+  if (!code) return;
+  if (code === 'd+'){ atom.d = '+'; return; }
+  if (code === 'd-'){ atom.d = '-'; return; }
+  const m = code.match(/^(\d?)([+-])$/);
+  if (!m) throw new Error('Ladung: ' + code);
+  atom.q = (m[1] ? +m[1] : 1) * (m[2] === '+' ? 1 : -1);
+}
 function encodeMol(){
-  if (!atoms.length) return '';
-  const bb = bbox();
+  if (!atoms.length && !arrows.length && !labels.length) return '';
+  const bb = sceneBounds() || {x0:0, y0:0};
   const idx = new Map(atoms.map((a, i) => [a.id, i]));
-  const A = atoms.map(a => a.el + ':' + Math.round(a.x-bb.x0) + ',' + Math.round(a.y-bb.y0)).join(';');
+  const rx = v => Math.round(v - bb.x0), ry = v => Math.round(v - bb.y0);
+  const A = atoms.map(a => {
+    const c = qCode(a);
+    return a.el + (c ? '^' + c : '') + ':' + rx(a.x) + ',' + ry(a.y);
+  }).join(';');
   const B = bonds.map(b => idx.get(b.a) + '-' + idx.get(b.b) + ':' + b.order).join(';');
-  return 'MOL2|' + A + '|' + B;
+  const P = arrows.map(a => a.kind + ':' + rx(a.x1) + ',' + ry(a.y1) + ',' +
+                            rx(a.x2) + ',' + ry(a.y2) + ',' + (a.bend || 0).toFixed(2) +
+                            (a.color ? ',' + a.color.replace('#','') : '')).join(';');
+  const T = labels.map(l => rx(l.x) + ',' + ry(l.y) + ':' + encodeURIComponent(l.t) +
+                            (l.color ? ':' + l.color.replace('#','') : '')).join(';');
+  return 'MOL5|' + A + '|' + B + '|' + P + '|' + T;
 }
 function decodeMol(txt){
   const p = txt.trim().split('|');
-  if (p.length !== 3 || (p[0] !== 'MOL1' && p[0] !== 'MOL2')) throw new Error('Format');
-  const re = p[0] === 'MOL2' ? /^([A-Za-z0-9]+):(-?\d+),(-?\d+)$/ : /^([A-Z][a-z]?)(-?\d+),(-?\d+)$/;
-  const na = [], nb = [];
+  if (p.length < 3 || !['MOL1','MOL2','MOL3','MOL4','MOL5'].includes(p[0])) throw new Error('Format');
+  const re = p[0] === 'MOL1' ? /^([A-Z][a-z]?)(-?\d+),(-?\d+)$/
+                             : /^([A-Za-z0-9]+?)(?:\^([^:]+))?:(-?\d+),(-?\d+)$/;
+  const old = p[0] === 'MOL1';
+  const na = [], nb = [], np = [], nt = [];
   let id = 1;
   for (const t of p[1].split(';').filter(Boolean)){
     const m = t.match(re);
     if (!m || !EL[m[1]]) throw new Error('Atom: ' + t);
-    na.push({id:id++, el:m[1], x:+m[2], y:+m[3]});
+    const atom = old ? {id:id++, el:m[1], x:+m[2], y:+m[3]}
+                     : {id:id++, el:m[1], x:+m[3], y:+m[4]};
+    if (!old) applyQCode(atom, m[2]);
+    na.push(atom);
   }
   for (const t of p[2].split(';').filter(Boolean)){
     const m = t.match(/^(\d+)-(\d+):([123])$/);
     if (!m || !na[+m[1]] || !na[+m[2]]) throw new Error('Bindung: ' + t);
     nb.push({id:id++, a:na[+m[1]].id, b:na[+m[2]].id, order:+m[3]});
   }
-  return {na, nb, nid:id};
+  for (const t of (p[3] || '').split(';').filter(Boolean)){
+    const m = t.match(/^([a-z]+):(-?\d+),(-?\d+),(-?\d+),(-?\d+),(-?[\d.]+)(?:,([0-9A-Fa-f]{6}))?$/);
+    if (!m || !ARROW_KINDS[m[1]]) throw new Error('Pfeil: ' + t);
+    const ar = {id:id++, kind:m[1], x1:+m[2], y1:+m[3], x2:+m[4], y2:+m[5], bend:+m[6]};
+    if (m[7]) ar.color = '#' + m[7];
+    np.push(ar);
+  }
+  for (const t of (p[4] || '').split(';').filter(Boolean)){
+    const m = t.match(/^(-?\d+),(-?\d+):([^:]*)(?::([0-9A-Fa-f]{6}))?$/);
+    if (!m) throw new Error('Text: ' + t);
+    const lb = {id:id++, x:+m[1], y:+m[2], t:decodeURIComponent(m[3])};
+    if (m[4]) lb.color = '#' + m[4];
+    nt.push(lb);
+  }
+  return {na, nb, np, nt, nid:id};
 }
 $('#btnCodeGet').addEventListener('click', () => {
   $('#code').value = encodeMol();
@@ -1773,8 +2341,8 @@ $('#btnCodeSet').addEventListener('click', () => {
   try {
     const d = decodeMol($('#code').value);
     pushUndo();
-    atoms = d.na; bonds = d.nb; nid = d.nid;
-    selection.clear();
+    atoms = d.na; bonds = d.nb; arrows = d.np; labels = d.nt; nid = d.nid;
+    selection.clear(); selArrow = null;
     centerView(); refresh();
     flash(btn, 'Geladen');
   } catch (err){
@@ -1814,7 +2382,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if ((e.ctrlKey || e.metaKey) && k === 'y'){ e.preventDefault(); redo(); return; }
-  const toolKeys = {b:'build', e:'element', v:'bond', m:'move', x:'erase'};
+  const toolKeys = {b:'build', e:'element', v:'bond', l:'charge', p:'arrow', t:'text', m:'move', x:'erase'};
   if (toolKeys[k]){ document.querySelector(`#tools [data-tool="${toolKeys[k]}"]`).click(); return; }
   const elKeys = {c:'C', o:'O', n:'N', h:'H', s:'S', f:'F', r:'R'};
   if (elKeys[k] && !e.ctrlKey && !e.metaKey){
@@ -1887,7 +2455,7 @@ $('#templates').addEventListener('change', e => {
   const key = e.target.value;
   if (!key) return;
   pushUndo();
-  atoms = []; bonds = []; selection.clear();
+  atoms = []; bonds = []; arrows = []; labels = []; selection.clear(); selArrow = null;
   TEMPLATES[key]();
   centerView();
   refresh();
@@ -1914,6 +2482,7 @@ document.fonts && document.fonts.ready.then(() => refresh());
 
 $('#hint').textContent = HINTS.build;
 syncControls();
+syncArrowUI();
 resize();
 TEMPLATES.ethanol();
 centerView();
